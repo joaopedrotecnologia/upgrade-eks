@@ -1,0 +1,467 @@
+# Upgrade de Cluster EKS
+
+**Objetivo:**
+Descrever como realizar o upgrade do Kubernetes em um cluster EKS na AWS.
+
+
+## 1. Compatibilidade
+
+### Features e bugs da nova versão
+
+Antes de fazer o upgrade do cluster kubernetes é importante ler o **Change Logs** da nova versão na documentação oficial do Kubernetes.
+
+[https://kubernetes.io/releases/](https://kubernetes.io/releases/)
+
+Nele vemos as features adicionadas e depreciadas na nova versão. Também são documentados os bugs conhecidos e corrigidos na versão.
+
+Nesse link podemos ver o **Change Logs** da versão [1.30](https://github.com/kubernetes/kubernetes/blob/master/CHANGELOG/CHANGELOG-1.30.md) do Kubernetes.
+
+
+Também é recomendado ler o Release Notes do EKS onde podem ter informações importantes específicas sobre o uso do Kubernets no EKS:
+
+[Release Notes do EKS](https://docs.aws.amazon.com/eks/latest/userguide/kubernetes-versions-standard.html)
+
+### Compatibilidade de API
+
+Antes de atualizar o cluster EKS é preciso validar se a nova versão tem mudanças de API que podem ser incompatíveis com as aplicações do cluster.
+
+Para isso existem ferramentas como o `kubedd` que validam a existência de problemas na migração para uma nova versão de kubernetes.
+
+Mais informações sobre o `kubedd` podem ser encontradas no projeto do [Kubedd](https://github.com/devtron-labs/silver-surfer). 
+
+A instalação pode ser feita usando os binários disponíveis em [https://github.com/devtron-labs/silver-surfer/releases](https://github.com/devtron-labs/silver-surfer/releases).
+
+```bash
+$ wget https://github.com/devtron-labs/silver-surfer/releases/download/v0.1.4/silver-surfer_0.1.4_linux_amd64.tar.gz
+$ tar -zxf silver-surfer_0.1.4_linux_amd64.tar.gz
+$ sudo mv kubedd /usr/bin
+
+
+$ kubedd --version
+Version: 0.1.4
+Commit: cb3cad6347f97cd61f2b8ce015ca1a3432cfac19
+Date: 2024-09-04T14:16:16Z
+```
+
+Para validar se existe alguma API do cluster incompatível com a versão do kubernetes desejada use a opção `--target-kubernetes-version`. Nesse exemplo é verificada a compatibilidade com a versão 1.30 do Kubernetes:
+
+
+```bash
+$ kubedd --target-kubernetes-version=1.30
+
+Results for cluster at version 1.29 to 1.30
+-------------------------------------------
+>>>> Unchanged API Version's <<<<
+
+```
+
+Nesse exemplo não existe nenhuma API incompatível com a versão 1.30. 
+
+Caso exista alguma API que será descontinuada temos de primeiro resolver a pendência antes de fazer o upgrade.
+
+
+## 2. Upgrade do Control Plane do EKS
+
+Para executar o upgrade do EKS acesse a console de gerenciamento do [Elastic Kubernetes Service](https://us-east-1.console.aws.amazon.com/eks/home) na AWS e clique no cluster que será atualizado.
+</br>
+
+![EKS](./images-kubernetes/select-eks-cluster.png)
+
+</br>
+
+Na tela do cluster clique em **Upgrade version**:
+</br>
+
+![EKS Upgrade](./images-kubernetes/eks-upgrade-start.png)
+
+</br>
+
+O EKS permite o upgrade somente para a próxima versão disponível do kubernetes. 
+
+Se o cluster está na versão 1.29 somente a versão 1.30 estará disponível para upgrade.
+
+Clique em **Upgrade** para iniciar o processo de upgrade do control plane do cluster. 
+</br>
+
+![Start Upgrade](./images-kubernetes/eks-upgrade-select-version.png)
+
+</br>
+
+O status do cluster será alterado de **Active** para **Updating**. Normalmente esse processo demora uns 15 minutos para ser concluído.
+</br>
+
+![Upgrade Running](./images-kubernetes/eks-upgrade-running.png)
+
+</br>
+
+Ao terminar o processo de upgrade do control plane podemos ver no **Cluster info** que o status do cluster volta para **Active** e a versão do kubernetes mudou para 1.30:
+
+</br>
+
+![Upgrade Finished](./images-kubernetes/eks-upgrade-finish.png)
+
+</br>
+
+
+## 3. Upgrade do Node group do EKS
+
+Na console do cluster clique na aba **Compute** para visualizar os node groups do cluster. Em **Node groups** observe que a versão do mesmo é 1.29.
+
+Clique em **Update now** para atualizar a versão do node group.
+
+</br>
+
+![Nodegroup info](./images-kubernetes/eks-nodegroup-info.png)
+
+</br>
+
+Confirme que **Update node group version** está marcado e clique em **Update** para atualizar a versão do node group.
+
+</br>
+
+![Nodegroup Update](./images-kubernetes/eks-nodegroup-update.png)
+
+</br>
+
+Aguarde a conclusão do update e clique no nome do node group para visualizar nos detalhes que a versão do Kubernetes foi atualizada para 1.30.
+
+</br>
+
+![Nodegroup Updated](./images-kubernetes/eks-nodegroup-updated.png)
+
+</br>
+
+
+## 4. Upgrade da imagem no Spotinst
+
+Como os nodes do EKS são gerenciados pelo Spotinst é necessário atualizar nele a versão da imagem usada para criar os nodes do cluster.
+
+Acesse o console do [Spotinst](https://console.spotinst.com/) e na tela do **Ocean** selecione o cluster em que deseja atualizar a configuração.
+
+</br>
+
+![Ocean Cluster](./images-kubernetes/spotinst-ocean-cluster.png)
+
+</br>
+
+No overview do cluster clique em **Actions** no canto superior direito e em seguida em **Edit cluster**.
+
+</br>
+
+![Edit Cluster](./images-kubernetes/spotinst-edit-cluster.png)
+
+</br>
+
+Na tela de **Cluster Details** clique em **Next**. 
+
+Em **Instance Specifications** entre o ID da AMI a ser usada para criar os nodes no cluster.
+
+Clique em **Next** e na próxima tela em **Update** para concluir a configuração.
+
+</br>
+
+![Edit AMI](./images-kubernetes/spotinst-edit-image.png)
+
+</br>
+
+**OBS:** Caso não tenha o valor do `AMI ID` é possível descobrir com esses passos:
+
+1 - Acesse a tela de configuração do nodegroup e anote o valor de **AMI type**.
+
+</br>
+
+![Nodegroup AMI Type](./images-kubernetes/eks-noegroup-ami-type.png)
+
+</br>
+
+2- No repositório do [Amazon EKS AMI](https://github.com/awslabs/amazon-eks-ami/releases) localize o nome da AMI para o `AMI Type` e versão do Kubernetes desejados.
+
+Como exemplo temos abaixo o nome para alguns tipos de AMI na release v20241121 do Kubernetes 1.30:
+
+| **AMI Type**            | **Nome AMI**                                            |
+|-------------------------|---------------------------------------------------------|
+| AL2_x86_64              | amazon-eks-node-1.30-v20241121                          |
+| AL2_ARM_64              | amazon-eks-arm64-node-1.30-v20241121                    |
+| AL2023_x86_64_STANDARD  | amazon-eks-node-al2023-x86_64-standard-1.30-v20241121   |
+| AL2023_ARM_64_STANDARD  | amazon-eks-node-al2023-arm64-standard-1.30-v20241121    |
+
+
+3 - Com o nome da AMI acesse a console do EC2 na AWS e em **Image** localize o `AMI ID`.
+
+Observe a região onde o cluster foi criado, pois o `AMI ID` de uma imagem é diferente para cada região.
+
+</br>
+
+![AMI ID](./images-kubernetes/eks-nodegroup-ami-id.png)
+
+</br>
+
+
+## 5. Rollout do Nodes no Spotinst
+
+Para fazer o rollout dos nodes com a nova AMI no cluster clique na aba **Virtual Node Groups**. Selecione o VNG onde será feito o rollout do nodes, clique em **VNG Actions** e em seguida em **Roll VNG**.
+
+</br>
+
+![VNG Roll](./images-kubernetes/spotinst-vng-select-roll.png)
+
+</br>
+
+Selecione as regras para o rollout dos nodes:
+
+- Porcentagem máxima de nodes que podem ser substituídos ao mesmo tempo
+
+- Porcentagem mínima de nodes substituídos em um job único
+
+- Se as políticas de tolerância a falhas dos pods **(PDB)** devem ser respeitadas durante o rollout.
+
+Clique em **Roll VNG** para iniciar o rollout dos nodes.
+
+</br>
+
+![VNG Roll](./images-kubernetes/spotinst-roll-vng-options.png)
+
+</br>
+
+Na aba **Rolls** será exibido o andamento do rollout dos nodes. 
+
+Os nodes serão substituídos seguindo as regras estipuladas para o Roll VNG.
+
+</br>
+
+![VNG Roll](./images-kubernetes/spotinst-roll-vng-running.png)
+
+</br>
+
+
+Na aba **Nodes** são listados os nodes do cluster. Observe que nodes serão adicionados e removidos ao cluster conforme o andamento do rollout.
+
+</br>
+
+![VNG Roll](./images-kubernetes/spotinst-roll-new-nodes.png)
+
+</br>
+
+
+Abaixo o detalhe do kubectl mostrando um novo node adicionado ao cluster `(ip-10-76-18-100.ec2.internal)` e outro que foi alterado para `Ready,SchedulingDisabled` para ser substituído `(ip-10-76-29-197.ec2.internal)`.
+
+Observe que o novo node está na versão 1.30 do Kubernetes.
+
+```bash
+$ kubectl get nodes
+NAME                           STATUS                     ROLES    AGE   VERSION
+ip-10-76-18-100.ec2.internal   Ready                      <none>   88s   v1.30.6-eks-94953ac
+ip-10-76-29-197.ec2.internal   Ready,SchedulingDisabled   <none>   24h   v1.29.10-eks-94953ac
+ip-10-76-47-23.ec2.internal    Ready                      <none>   25h   v1.29.10-eks-94953ac
+```
+
+Ao concluir o processo de rollout todos os nodes deverão estar na nova versão:
+
+</br>
+
+![VNG Roll](./images-kubernetes/spotinst-rollout-finished.png)
+
+</br>
+
+No kubectl podemos ver que os nodes foram atualizados para a versão 1.30 do Kubernetes.
+
+```bash
+$ kubectl get nodes
+NAME                           STATUS                     ROLES    AGE     VERSION
+ip-10-76-18-100.ec2.internal   Ready                      <none>   9m52s   v1.30.6-eks-94953ac
+ip-10-76-25-110.ec2.internal   Ready                      <none>   6m12s   v1.30.6-eks-94953ac
+```
+
+## 6. Upgrade Add-Ons do EKS
+
+Após atualizar o control plane e os nodes do cluster EKS, temos de atualizar a versão dos Add-Ons instalados no cluster.
+
+Na documentação da AWS temos os Add-Ons disponíveis para o EKS:
+
+[Available Amazon EKS add-ons from AWS](https://docs.aws.amazon.com/eks/latest/userguide/workloads-add-ons-available-eks.html)
+
+Geralmente temos os 4 Add-Ons abaixo instalados nos clusters:
+
+- Kube-proxy
+
+- CoreDNS
+
+- Amazon VPC CNI
+
+- Amazon EBS CSI Driver
+
+### 6.1 Upgrade do Kube-Proxy
+
+Para atualizar o Add-On do Kube-proxy acesse a console [Elastic Kubernetes Service](https://us-east-1.console.aws.amazon.com/eks/home) e clique no cluster desejado.
+
+Na aba **Add-Ons** localize o **Kube-proxy** e clique em **Update version**.
+
+</br>
+
+![Add-On Kube-proxy](./images-kubernetes/eks-add-on-kube-proxy.png)
+
+</br>
+
+Em **Version** selecione a versão do **Kube-proxy** usando a lista recomendada pela AWS com a versão do EKS e do Add-On.
+
+[Manage kube-proxy in Amazon EKS clusters](https://docs.aws.amazon.com/eks/latest/userguide/managing-kube-proxy.html)
+
+Clique em **Save changes** para atualizar o Add-On.
+
+</br>
+
+![Kube-proxy version](./images-kubernetes/eks-add-on-kube-proxy-version.png)
+
+</br>
+
+Para acompanhar o upgrade use o kubectl e verifique se ocorre o rollout dos pods do kube-proxy sem erros.
+
+```bash
+$ watch -n1 kubectl get pods -l k8s-app=kube-proxy -n kube-system
+NAME               READY   STATUS    RESTARTS   AGE
+kube-proxy-8zjwj   1/1     Running   0          11s
+kube-proxy-kdb9t   1/1     Running   0          13s
+```
+
+No console do EKS valide que o kube-proxy foi atualizado e está em status **Active**.
+
+</br>
+
+![Kube-proxy version](./images-kubernetes/eks-add-on-kube-proxy-version-updated.png)
+
+</br>
+
+### 6.2 Upgrade do CoreDNS
+
+Para atualizar o Add-On do CoreDNS acesse a console [Elastic Kubernetes Service](https://us-east-1.console.aws.amazon.com/eks/home) e clique no cluster desejado.
+
+Na aba **Add-Ons** localize o **CoreDNS** e clique em **Update version**.
+
+</br>
+
+![Add-On CoreDNS](./images-kubernetes/eks-addon-coredns.png)
+
+</br>
+
+Em **Version** selecione a versão do **CoreDNS** usando a lista recomendada pela AWS com a versão do EKS e do Add-On.
+
+[Manage CoreDNS for DNS in Amazon EKS clusters](https://docs.aws.amazon.com/eks/latest/userguide/managing-coredns.html)
+
+Clique em **Save changes** para atualizar o Add-On.
+
+</br>
+
+![Kube-proxy version](./images-kubernetes/eks-add-on-coredns-version.png)
+
+</br>
+
+Para acompanhar o upgrade use o kubectl e verifique se ocorre o rollout dos pods do coredns sem erros.
+
+```bash
+$ watch -n1 kubectl get pods -l k8s-app=kube-dns -n kube-system
+NAME                       READY   STATUS    RESTARTS   AGE
+coredns-589f9d5f7f-rq76t   1/1     Running   0          25s
+coredns-589f9d5f7f-wnm8m   1/1     Running   0          25s
+```
+
+No console do EKS valide que o CoreDNS foi atualizado e está em status **Active**.
+
+</br>
+
+![CoreDNS version](./images-kubernetes/eks-add-on-coredns-version-updated.png)
+
+</br>
+
+### 6.3 Upgrade do VPC CNI
+
+Para atualizar o Add-On do VPC CNI acesse a console [Elastic Kubernetes Service](https://us-east-1.console.aws.amazon.com/eks/home) e clique no cluster desejado.
+
+Na aba **Add-Ons** localize o **VPC CNI** e clique em **Update version**.
+
+</br>
+
+![Add-On VPC CNI](./images-kubernetes/eks-addon-vpc-cni.png)
+
+</br>
+
+Em **Version** selecione a versão do **VPC CNI** usando a lista recomendada pela AWS com a versão do EKS e do Add-On.
+
+[Amazon VPC CNI](https://docs.aws.amazon.com/eks/latest/userguide/managing-vpc-cni.html)
+
+Clique em **Save changes** para atualizar o Add-On.
+
+</br>
+
+![VPC CNI version](./images-kubernetes/eks-add-on-vpc-cni-version.png)
+
+</br>
+
+Para acompanhar o upgrade use o kubectl e verifique se ocorre o rollout dos pods do aws-node sem erros.
+
+```bash
+$ kubectl get pods -l k8s-app=aws-node -n kube-system
+NAME             READY   STATUS    RESTARTS   AGE
+aws-node-mxvn5   2/2     Running   0          24s
+aws-node-x4nkn   2/2     Running   0          35s
+```
+
+No console do EKS valide que o VPC CNI foi atualizado e está em status **Active**.
+
+</br>
+
+![CoreDNS version](./images-kubernetes/eks-add-on-vpc-cni-version-updated.png)
+
+</br>
+
+### 6.4 Upgrade do EBS CSI Driver
+
+Para atualizar o Add-On do EBS CSI Driver acesse a console [Elastic Kubernetes Service](https://us-east-1.console.aws.amazon.com/eks/home) e clique no cluster desejado.
+
+Na aba **Add-Ons** localize o **EBS CSI Driver** e clique em **Update version**.
+
+</br>
+
+![Add-On EBS CSI Driver](./images-kubernetes/eks-add-on-ebs.png)
+
+</br>
+
+A documentação de instalação do EBS CSI Driver no EKS não especifica uma versão do driver para cada versão do Kubernetes.
+
+- [Store Kubernetes volumes with Amazon EBS](https://docs.aws.amazon.com/eks/latest/userguide/ebs-csi.html)
+
+Na seção de Compatibilidade do projeto no GitHub menciona que o driver é compatível com todas as versões suportadas do EKS, incluindo as versões em suporte extendido.
+
+- [Amazon Elastic Block Store (EBS) CSI driver](https://github.com/kubernetes-sigs/aws-ebs-csi-driver?tab=readme-ov-file#compatibility)
+
+Em **Version** selecione a versão do **EBS CSI Driver** desejada.
+
+Na versão 1.30 do Kubernetes estamos usando a versão 1.30 do driver do EBS.
+
+Em **Add-on Acess** marque a opção **IAM roles for service account (IRSA)** e selecione a role `AmazonEKS_EBS_CSI_DriverRole`.
+
+Clique em **Save changes** para atualizar o Add-On.
+
+</br>
+
+![Add-On EBS CSI Driver Version](./images-kubernetes/eks-add-on-ebs-version.png)
+
+</br>
+
+Para acompanhar o upgrade use o kubectl e verifique se ocorre o rollout dos pods do ebs driver sem erros.
+
+```bash
+$ kubectl get pods -l app.kubernetes.io/component=csi-driver -n kube-system
+NAME                                  READY   STATUS    RESTARTS   AGE
+ebs-csi-controller-56869b46b8-nwv6g   6/6     Running   0          47s
+ebs-csi-controller-56869b46b8-wlfbs   6/6     Running   0          47s
+ebs-csi-node-9sft8                    3/3     Running   0          39s
+ebs-csi-node-slg5d                    3/3     Running   0          46s
+```
+
+No console do EKS valide que o EBS CSI Driver foi atualizado e está em status **Active**.
+
+</br>
+
+![Add-On EBS CSI Driver](./images-kubernetes/eks-add-on-ebs-updated.png)
+
+</br>
